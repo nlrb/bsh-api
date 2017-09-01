@@ -47,29 +47,38 @@ class BSH extends EventEmitter {
     this.scope = bshCheckScope(scope || 'IdentifyAppliance Monitor')
     this.access_token
     this.refresh_token
+    this.state_token
     this.appliances
   }
 
-  /** Provides Home-Connect defined authentication URL with parameters
+  /**
+   * Provides Home-Connect defined authentication URL with parameters
    * @returns {string} OUath2 authorization URL
    */
   getAuthUrl() {
+    this.state_token = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      let r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16)
+    })
+
     let params = [
       'client_id=' + this.client,
       'redirect_uri=' + this.redirect,
       'response_type=code',
-      'scope=' + this.scope
+      'scope=' + this.scope,
+      'state=' + this.state_token
     ]
     return this.baseUrl + '/security/oauth/authorize' + '?' + params.join('&')
   }
 
-  /** Request Oauth2 autorization code
+  /**
+   * Request Oauth2 autorization code
    * @param {string} auth_url - authorization url (if not provided, will be generated with getAuthUrl)
    * @returns {string} - received 'code'
    */
   authorize(auth_url) {
     return new Promise((resolve, reject) => {
       let url = auth_url || this.getAuthUrl()
+      console.log(url)
   		request
         .get({ url: url })
   			.on('error', (err) => reject(err))
@@ -80,7 +89,13 @@ class BSH extends EventEmitter {
             if (err >= 0) {
               reject(decodeURI(redirect.slice(err)))
             } else {
-              let result = redirect.match(/code=(.*)\&/)[1]
+              let result = redirect.match(/code=([^\&]*)/)[1]
+              if (this.state !== undefined) {
+                let state = redirect.match(/state=([^\&]*)/)[1]
+                if (state !== this.state) {
+                  reject(new Error('Invalid state returned'))
+                }
+              }
               resolve(result)
             }
           } else {
@@ -90,7 +105,8 @@ class BSH extends EventEmitter {
   	})
   }
 
-  /** Request a new access token or refresh the token
+  /**
+   * Request a new access token or refresh the token
    * @param {string} refresh - refresh token, if undefined a new access token will be requested
    * @returns {object} - an object containing access & refresh token
    */
@@ -112,7 +128,8 @@ class BSH extends EventEmitter {
   		request
   			.post({ url: this.baseUrl + '/security/oauth/token', form: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' }})
   			.on('error', (err) => {
-  					reject(new Error(err))
+          this.emit('token.invalid')
+					reject(new Error(err))
   			})
   			.on('response', resp => {
   				resp.on('data', (data) => {
@@ -127,12 +144,14 @@ class BSH extends EventEmitter {
                 result.expires = new Date(now.getTime() + valid * 1000)
                 delete result.id
                 delete result.expires_in
-                this.emit('newtokens', result)
+                this.emit('token.available', result)
                 resolve(result)
               } else {
+                this.emit('token.invalid')
                 reject(new Error('Invalid reply'))
               }
             } else {
+              this.emit('token.invalid')
               reject(new Error(result.error + ' (' + result.error_description + ')'))
             }
           })
@@ -190,7 +209,8 @@ class BSH extends EventEmitter {
                   })
               } else {
                 let err = generateError(resp.statusCode)
-                err.detail = JSON.parse(result)
+                result = JSON.parse(result)
+                err.detail = result.error || result
     					  reject(err)
               }
     				} else {
@@ -204,25 +224,50 @@ class BSH extends EventEmitter {
   /**
    * Return the (promise of) list of appliances
    * @param {boolean} force - false: read from cache; true: read from server
-   * @returns {Promise|object} - An array with appliance objects
+   * @returns {Promise} - An array with appliance objects
   */
   async getAppliances(force) {
     try {
+      let result
       if (this.appliances === undefined || force) {
-        let result = await this._executeCall(bsh.api.homeappliances.getList)
-        result = await JSON.parse(result)
+        result = await this._executeCall(bsh.api.homeappliances.getList)
+        result = JSON.parse(result)
         if (result.data !== undefined && result.data.homeappliances !== undefined) {
           result = await result.data.homeappliances.reduce(
             (obj, item) => { let idx = item.haId; delete item.haId; obj[idx] = new bshAppliance(this, idx, item); return obj }, {}
           )
         } else {
-          throw new Error('invalid format')
+          result = Promise.reject('invalid format')
         }
         this.appliances = result
+      } else {
+        result = Promise.resolve(this.appliances)
       }
-      return this.appliances
+      return result
     } catch(err) {
-      throw(err)
+      return Promise.reject(err)
+    }
+  }
+
+  /**
+   * Return the (promise of) list of appliances
+   * @param {string} haId - Home Appliance identifier
+   * @returns {Promise} - An array with appliance objects
+  */
+  async getAppliance(haId) {
+    if (this.appliance !== undefined && this.appliance[haId] !== undefined) {
+      return Promise.resolve(this.appliances[haId])
+    } else {
+      try {
+        let result = await this.getAppliances(true)
+        if (result[haId] === undefined) {
+          return Promise.reject('Unknown appliance')
+        } else {
+          return Promise.resolve(result[haId])
+        }
+      } catch(err) {
+        return Promise.reject(err)
+      }
     }
   }
 

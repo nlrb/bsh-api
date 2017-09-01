@@ -24,14 +24,22 @@ api
 									console.log(now + ' [CONNECT] ' + details.name + ': '+ (state ? 'CONNECTED' : 'DISCONNECTED'));
 								})
 								.on('event', data => {
-									console.log(data.timestamp + ' [' + data.type + '] ' + details.name + ': ' + data.summary);
+									console.log(data.date + ' [' + data.type + '] ' + details.name + ': ' + data.summary);
 								})
 								.registerEvents();
 							appliance.getStatus(true)
 								.then(status => console.log(appliance.getName(), 'getStatus', status))
 								.catch(err => console.log(appliance.getName(), 'getStatus ERROR:', err))
 								appliance.getAvailablePrograms()
-									.then(status => console.log(appliance.getName(), 'getAvailablePrograms', status))
+									.then(programs => {
+										console.log(appliance.getName(), 'getAvailablePrograms', programs)
+										programs.forEach(program => {
+											// Check the options for each program
+											appliance.getAvailableProgramOptions(program.key)
+												.then(options => console.log(appliance.getName(), 'getAvailableProgram', program.key, options))
+												.catch(err => console.log(appliance.getName(), 'getAvailableProgram ERROR:', err))
+										})
+									})
 									.catch(err => console.log(appliance.getName(), 'getAvailablePrograms ERROR:', err))
 							appliance.getActiveProgram()
 								.then(result => console.log(appliance.getName(), 'getActiveProgram', result))
