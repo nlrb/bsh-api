@@ -5,7 +5,7 @@ const bshAppliance = require('./lib/bsh-appliance.js')
 const request = require('request')
 const EventEmitter = require('events')
 
-const debug = console
+const debug = console.log
 
 var generateError = (code => { return {
   nr: code,
@@ -41,6 +41,7 @@ class BSH extends EventEmitter {
    */
   constructor(client, url, redirect, scope) {
     super()
+    this.debug = debug
     this.client = client
     this.baseUrl = url || 'https://developer.home-connect.com'
     this.redirect = redirect || 'https://apiclient.home-connect.com/o2c.html'
@@ -161,7 +162,7 @@ class BSH extends EventEmitter {
 
   /** Refresh the access token */
   refreshTokens() {
-    debug.log('Token refresh')
+    this.debug('Token refresh')
     return this.getTokens()
   }
 
