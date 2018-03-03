@@ -43,7 +43,7 @@ class BSH extends EventEmitter {
     super()
     this.debug = debug
     this.client = client
-    this.baseUrl = url || 'https://developer.home-connect.com'
+    this.baseUrl = url || 'https://simulator.home-connect.com/'
     this.redirect = redirect || 'https://apiclient.home-connect.com/o2c.html'
     this.scope = bshCheckScope(scope || 'IdentifyAppliance Monitor')
     this.access_token
@@ -210,8 +210,12 @@ class BSH extends EventEmitter {
                   })
               } else {
                 let err = generateError(resp.statusCode)
-                result = JSON.parse(result)
-                err.detail = result.error || result
+                try {
+                  result = JSON.parse(result)
+                  err.detail = result.error || result
+                } catch (e) {
+                  err.detail = result
+                }
     					  reject(err)
               }
     				} else {
